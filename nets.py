@@ -11,7 +11,7 @@ class ToyNet(nn.Module):
     def __init__(self, dim=2, n_f=32, leak=0.05):
         super(ToyNet, self).__init__()
         self.f = nn.Sequential(
-            nn.Conv2d(dim, n_f, 1, 1, 0),
+            nn.Conv2d(dim, n_f, 1, 1, 0), # in, out, kernel size, stride, padding
             nn.LeakyReLU(leak),
             nn.Conv2d(n_f, n_f * 2, 1, 1, 0),
             nn.LeakyReLU(leak),

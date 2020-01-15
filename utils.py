@@ -120,6 +120,7 @@ def plot_diagnostics(batch, en_diffs, grad_mags, exp_dir, fontsize=10):
 #####################
 
 class ToyDataset:
+    # TODO: toy_groups I think can be set to 3. toy_sd and toy_radius should be hardcoded?
     def __init__(self, toy_type='gmm', toy_groups=8, toy_sd=0.15, toy_radius=1, viz_res=500, kde_bw=0.05):
         # import helper functions
         from scipy.stats import gaussian_kde
@@ -148,6 +149,13 @@ class ToyDataset:
                     density += self.weights[k]*self.mvn.pdf(np.array([x[0], x[1]]), mean=self.means[k].squeeze(),
                                                             cov=(self.toy_sd**2)*np.eye(2))
                 return density
+        elif self.toy_type == 'gmm2': # TODO
+            def true_density(x):
+                density = 0
+                for k in range(toy_groups):
+                    density += self.weights[k]*self.mvn.pdf(np.array([x[0], x[1]]), mean=self.means[k].squeeze(),
+                                                            cov=(self.toy_sd**2)*np.eye(2))
+                return density
         elif self.toy_type == 'rings':
             def true_density(x):
                 radius = np.sqrt((x[0] ** 2) + (x[1] ** 2))
@@ -157,7 +165,7 @@ class ToyDataset:
                                                               cov=(self.toy_sd**2))/(2*np.pi*self.toy_radius*(k+1))
                 return density
         else:
-            raise RuntimeError('Invalid option for toy_type (use "gmm" or "rings")')
+            raise RuntimeError('Invalid option for toy_type (use "gmm", "gmm2", or "rings")')
         self.true_density = true_density
 
         # viz parameters
@@ -182,6 +190,10 @@ class ToyDataset:
             for i in range(self.toy_groups):
                 sample_group = self.means[i] + self.toy_sd * np.random.randn(2*sample_group_sz[i]).reshape(-1, 2, 1, 1)
                 toy_sample = np.concatenate((toy_sample, sample_group), axis=0)
+        elif self.toy_type == 'gmm2': # TODO
+            for i in range(self.toy_groups):
+                sample_group = self.means[i] + self.toy_sd * np.random.randn(2*sample_group_sz[i]).reshape(-1, 2, 1, 1)
+                toy_sample = np.concatenate((toy_sample, sample_group), axis=0)
         elif self.toy_type == 'rings':
             for i in range(self.toy_groups):
                 sample_radii = self.toy_radius*(i+1) + self.toy_sd * np.random.randn(sample_group_sz[i])
@@ -191,7 +203,7 @@ class ToyDataset:
                 sample_group = np.concatenate((sample_x, sample_y), axis=1)
                 toy_sample = np.concatenate((toy_sample, sample_group.reshape(-1, 2, 1, 1)), axis=0)
         else:
-            raise RuntimeError('Invalid option for toy_type ("gmm" or "rings")')
+            raise RuntimeError('Invalid option for toy_type ("gmm", "gmm2", or "rings")')
 
         return toy_sample
 
