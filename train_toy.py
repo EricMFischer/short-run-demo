@@ -1,17 +1,27 @@
 #############################################
-# ## TRAIN EBM USING 2D TOY DISTRIBUTION ## #
+# ## TRAIN EBM USING 2D TOY DISTRIBUTION ## #
 #############################################
+# Measures and plots the diagnostic values d_{s_t} and r_t
 
-import torch as t
-import json
-import os
-from nets import ToyNet
-from utils import plot_diagnostics, ToyDataset
+'''
+GOAL: Implement another toy density for learning 2D DeepFRAME models.
+Modify ToyDataset class in utils to implement another density.
+Density should be a GMM groundtruth density with several modes that have
+different covariance matrices.
+This file (train_toy.py) should run without changes once new dataset class has
+been made.
+'''
 
-# directory for experiment results
-EXP_DIR = './out_toy/rings_convergent_1/'
-# json file with experiment config
-CONFIG_FILE = './config_locker/rings_convergent.json'
+import torch as t
+import json
+import os
+from nets import ToyNet
+from utils import plot_diagnostics, ToyDataset
+
+# directory for experiment results
+EXP_DIR = './out_toy/toy_config_1/'
+# json file with experiment config
+CONFIG_FILE = './config_locker/toy_config.json'
 
 
 #######################
@@ -70,7 +80,7 @@ print('Processing data...')
 q = ToyDataset(config['toy_type'], config['toy_groups'], config['toy_sd'],
                config['toy_radius'], config['viz_res'], config['kde_bw'])
 
-# initialize persistent states from noise 
+# initialize persistent states from noise
 # s_t_0 is used when init_type == 'persistent' in sample_s_t()
 s_t_0 = 2 * t.rand([config['s_t_0_size'], 2, 1, 1]).to(device) - 1
 
