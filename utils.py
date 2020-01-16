@@ -126,28 +126,22 @@ class ToyDataset:
     # With an 80/20 ratio in a bimodal Guassian, if we count the chains which are attracted to each mode, we want the ratio to be 8/2.
     # We want the probability mass to shift correctly.
     # With persistent chains there is most likely no issue. But for short-run (noise initialized), it is good to double-check.
-    # Initializing from a uniform noise-distribution, it seems as if the short-run MCMC could transform it into anything. But,
-    # looking at it from the MCMC perspective, it may be unclear if the proportions are captured.
 
-    # Tip 1: Mitch eventually got good short-run results with noise initialization, but he couldn't use a uniform distribution;
-    # he had to use a Gaussian. With just a uniform, it started in a box and got these weird corners and edges.
+    # Note: Mitch eventually got good short-run results with noise initialization, but he couldn't use a uniform distribution;
+    # he had to use a Gaussian. With just a uniform, it started in a box and got weird corners and edges.
 
-    # Tip 2: With noise_init_factor, we can make the range of the uniform initialization larger, so it's less likely the probability mass
+    # With noise_init_factor, we can make the range of the uniform initialization larger, so it's less likely the probability mass
     # will concentrate in edges or a corner.
-    # In an example with 2 modes, if the boundary of the uniform distribution is close to one of the modes, it may concentrate here instead of over both modes.
-    # But with noise_init_factor to shrink or englarge our proposal uniform distribution range, it alleviates this issue.
+    # With noise_init_factor to shrink or enlarge our proposal uniform distribution range, it alleviates this issue.
+
     # Depending on how we choose 3 means, may need to change in config the initial proposal noise noise_init_factor.
     # noise_init_factor: how much we mutiply our means by when we draw samples of noise.
     # Example: with plot_val_max=4, just using Guassian noise does not lend good short-run results.
     # With an initial noise distribution too close to the center, it's difficult to capture data.
     # It's easier for widely spread data to shrink and converge than for narrowly spread data to enlarge to converge.
 
-    # Tip 3: Be aware of the minimum std of your Gaussians, which is important for tuning the langevin dynamics of the long-run MCMC.
+    # Tip: Be aware of the minimum std of your Gaussians, which is important for tuning the langevin dynamics of the long-run MCMC.
     # For every covariance matrix, what is the minimum eigenvalue and what is the minimum (used for tuning) over all 3 of those matrices?
-
-
-    # toy_groups: # of GMMs/modes
-    # toy_radius, toy_sd: hardcode, ignore config values
 
     # GMM parameters: choose mean, std, covariance, weights to be diverse (means should be non-symmetric, noticeably different shapes)
     # 3 Guassian means:
@@ -167,8 +161,8 @@ class ToyDataset:
         self.toy_groups = toy_groups
 
         # hardcode toy_sd, radius, and weights if toy type is 'gmm_2'
-        self.toy_sd = [1.5e-1, 1.5e-1, 1.5e-1] if toy_type == 'gmm_2' else toy_sd
-        self.toy_radius = [1.0, 1.0, 1.0] if toy_type == 'gmm_2' else toy_radius
+        self.toy_sd = [1.8e-1, 1.5e-1, 1.3e-1] if toy_type == 'gmm_2' else toy_sd
+        self.toy_radius = [1.0, 1.3, 1.5] if toy_type == 'gmm_2' else toy_radius
         self.weights = [0.1, 0.2, 0.7] if toy_type == 'gmm_2' else np.ones(toy_groups) / toy_groups
 
         if toy_type == 'gmm':
@@ -176,11 +170,12 @@ class ToyDataset:
             means_y = np.sin(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, toy_groups)).reshape(toy_groups, 1, 1, 1)
             self.means = toy_radius * np.concatenate((means_x, means_y), axis=1)
 
-        elif toy_type == 'gmm_2': # TODO
+        elif toy_type == 'gmm_2':
             accum_means = None
+            mean_radius = [2/5, 3/5, 1]
             for i in range(self.toy_groups):
-                mean_x = np.cos(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, 1)).reshape(1, 1, 1, 1)
-                mean_y = np.sin(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, 1)).reshape(1, 1, 1, 1)
+                mean_x = np.cos(2*np.pi*mean_radius[i]).reshape(1, 1, 1, 1)
+                mean_y = np.sin(2*np.pi*mean_radius[i]).reshape(1, 1, 1, 1)
                 if i == 0:
                     accum_means = self.toy_radius[i] * np.concatenate((mean_x, mean_y), axis=1)
                 else:
@@ -198,11 +193,11 @@ class ToyDataset:
                     density += self.weights[k]*self.mvn.pdf(np.array([x[0], x[1]]), mean=self.means[k].squeeze(),
                                                             cov=(self.toy_sd**2)*np.eye(2))
                 return density
-        elif self.toy_type == 'gmm_2': # TODO
+        elif self.toy_type == 'gmm_2':
             def true_density(x):
                 density = 0
                 for k in range(toy_groups):
-                    density += self.weights[k]*self.mvn.pdf(np.array([x[0], x[1]]), mean=self.means[k].squeeze(),
+                    density += self.weights[k]*self.mvn.pdf(np.array([x[1], x[0]]), mean=self.means[k].squeeze(),
                                                             cov=(self.toy_sd[k]**2)*np.eye(2))
                 return density
         elif self.toy_type == 'rings':
@@ -220,11 +215,11 @@ class ToyDataset:
         # viz parameters
         self.viz_res = viz_res
         self.kde_bw = kde_bw
-        # self.plot_val_max: controls how far x, y are from origin, e.g. 1.6, 4
         if toy_type == 'rings':
             self.plot_val_max = toy_groups * toy_radius + 4 * toy_sd
         elif toy_type == 'gmm_2':
-            self.plot_val_max = max(self.toy_radius) + 4 * max(self.toy_sd)
+            # self.plot_val_max = max(self.toy_radius) + 4 * max(self.toy_sd)
+            self.plot_val_max = 3
         else:
             self.plot_val_max = toy_radius + 4 * toy_sd
 
@@ -244,8 +239,8 @@ class ToyDataset:
                 sample_group = self.means[i] + self.toy_sd * np.random.randn(2*sample_group_sz[i]).reshape(-1, 2, 1, 1)
                 toy_sample = np.concatenate((toy_sample, sample_group), axis=0)
         elif self.toy_type == 'gmm_2':
-            # With 3 toy groups and weights=[.1,.2,.7], we'll generate about 10 samples from first mean, 20 samples from second mean,
-            # and 70 samples from third mean, for each toy group.
+            # With 3 toy groups and weights=[.1, .2, .7], we generate 10, 20, and 70 samples from the first, second, and third means,
+            # respectively, for each toy group
             for i in range(self.toy_groups):
                 sample_group = self.means[i] + self.toy_sd[i] * np.random.randn(2*sample_group_sz[i]).reshape(-1, 2, 1, 1)
                 toy_sample = np.concatenate((toy_sample, sample_group), axis=0)

@@ -1,14 +1,7 @@
 #############################################
 # ## TRAIN EBM USING 2D TOY DISTRIBUTION ## #
 #############################################
-# Measures and plots the diagnostic values d_{s_t} and r_t
 
-# GOAL: Implement another toy density for learning 2D DeepFRAME models.
-# Modify ToyDataset class in utils to implement another density.
-# Density should be a GMM groundtruth density with several modes that have
-# different covariance matrices.
-# This file (train_toy.py) should run without changes once new dataset class has
-# been made.
 import sys
 sys.path.append('/Library/Frameworks/Python.framework/Versions/3.7/lib/python3.7/site-packages')
 
@@ -19,7 +12,7 @@ from nets import ToyNet
 from utils import plot_diagnostics, ToyDataset
 
 # directory for experiment results
-EXP_DIR = './out_toy/toy_config_15/'
+EXP_DIR = './out_toy/toy_config_1/'
 # json file with experiment config
 CONFIG_FILE = './config_locker/toy_config.json'
 
@@ -143,7 +136,7 @@ print('Training has started.')
 for i in range(config['num_train_iters']):
     # obtain positive and negative samples
     x_q = sample_q()
-    x_s_t, r_s_t = sample_s_t(batch_size=config['batch_size'])
+    x_s_t, r_s_t = sample_s_t(batch_size=config['batch_size']) # NOTE: you understand everything until here
 
     # calculate ML computational loss d_s_t (Section 3) for data and shortrun samples
     d_s_t = f(x_q).mean() - f(x_s_t).mean()
