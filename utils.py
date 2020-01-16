@@ -130,7 +130,7 @@ class ToyDataset:
     # looking at it from the MCMC perspective, it may be unclear if the proportions are captured.
 
     # Tip 1: Mitch eventually got good short-run results with noise initialization, but he couldn't use a uniform distribution;
-    # he had to use a Guassian. With just a uniform, it started in a box and got these weird corners and edges.
+    # he had to use a Gaussian. With just a uniform, it started in a box and got these weird corners and edges.
 
     # Tip 2: With noise_init_factor, we can make the range of the uniform initialization larger, so it's less likely the probability mass
     # will concentrate in edges or a corner.
@@ -165,17 +165,28 @@ class ToyDataset:
         # toy dataset parameters
         self.toy_type = toy_type
         self.toy_groups = toy_groups
-        self.toy_sd = toy_sd
-        self.toy_radius = toy_radius
-        self.weights = np.ones(toy_groups) / toy_groups
+
+        # hardcode toy_sd, radius, and weights if toy type is 'gmm_2'
+        self.toy_sd = [1.5e-1, 1.5e-1, 1.5e-1] if toy_type == 'gmm_2' else toy_sd
+        self.toy_radius = [1.0, 1.0, 1.0] if toy_type == 'gmm_2' else toy_radius
+        self.weights = [0.1, 0.2, 0.7] if toy_type == 'gmm_2' else np.ones(toy_groups) / toy_groups
+
         if toy_type == 'gmm':
             means_x = np.cos(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, toy_groups)).reshape(toy_groups, 1, 1, 1)
             means_y = np.sin(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, toy_groups)).reshape(toy_groups, 1, 1, 1)
             self.means = toy_radius * np.concatenate((means_x, means_y), axis=1)
+
         elif toy_type == 'gmm_2': # TODO
-            means_x = np.cos(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, toy_groups)).reshape(toy_groups, 1, 1, 1)
-            means_y = np.sin(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, toy_groups)).reshape(toy_groups, 1, 1, 1)
-            self.means = toy_radius * np.concatenate((means_x, means_y), axis=1)
+            accum_means = None
+            for i in range(self.toy_groups):
+                mean_x = np.cos(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, 1)).reshape(1, 1, 1, 1)
+                mean_y = np.sin(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, 1)).reshape(1, 1, 1, 1)
+                if i == 0:
+                    accum_means = self.toy_radius[i] * np.concatenate((mean_x, mean_y), axis=1)
+                else:
+                    mean_xy = self.toy_radius[i] * np.concatenate((mean_x, mean_y), axis=1)
+                    accum_means = np.concatenate((accum_means, mean_xy), axis=0)
+            self.means = accum_means
         else:
             self.means = None
 
@@ -192,7 +203,7 @@ class ToyDataset:
                 density = 0
                 for k in range(toy_groups):
                     density += self.weights[k]*self.mvn.pdf(np.array([x[0], x[1]]), mean=self.means[k].squeeze(),
-                                                            cov=(self.toy_sd**2)*np.eye(2))
+                                                            cov=(self.toy_sd[k]**2)*np.eye(2))
                 return density
         elif self.toy_type == 'rings':
             def true_density(x):
@@ -209,11 +220,13 @@ class ToyDataset:
         # viz parameters
         self.viz_res = viz_res
         self.kde_bw = kde_bw
-        # self.plot_val_max: controls how far x, y are from origin, e.g. 1.3, 4
+        # self.plot_val_max: controls how far x, y are from origin, e.g. 1.6, 4
         if toy_type == 'rings':
             self.plot_val_max = toy_groups * toy_radius + 4 * toy_sd
+        elif toy_type == 'gmm_2':
+            self.plot_val_max = max(self.toy_radius) + 4 * max(self.toy_sd)
         else:
-            self.plot_val_max = toy_radius + 4 * toy_sd # TODO: okay for gmm_2?
+            self.plot_val_max = toy_radius + 4 * toy_sd
 
         # save values for plotting groundtruth landscape
         self.xy_plot = np.linspace(-self.plot_val_max, self.plot_val_max, self.viz_res)
@@ -224,19 +237,17 @@ class ToyDataset:
 
     def sample_toy_data(self, num_samples):
         toy_sample = np.zeros(0).reshape(0, 2, 1, 1)
-        # Sample multinomial across toy_groups according to their Gaussian mixture weights
-        # Goal (first step): With 3 toy groups, e.g. generate 100 from first mean, 200 from second mean, 700 from third mean
-        # For the number of groups, generate that from the Gaussian.
+        # Sample from a multinomial across toy_groups according to their Gaussian mixture weights
         sample_group_sz = np.random.multinomial(num_samples, self.weights)
         if self.toy_type == 'gmm':
             for i in range(self.toy_groups):
                 sample_group = self.means[i] + self.toy_sd * np.random.randn(2*sample_group_sz[i]).reshape(-1, 2, 1, 1)
                 toy_sample = np.concatenate((toy_sample, sample_group), axis=0)
         elif self.toy_type == 'gmm_2':
-            # TODO: write way to generate num_samples samples from toy data
-            # NOTE: Ensure this code takes correct means, toy_sd. Instead of 10 groups of weights, I'll have 3 groups.
+            # With 3 toy groups and weights=[.1,.2,.7], we'll generate about 10 samples from first mean, 20 samples from second mean,
+            # and 70 samples from third mean, for each toy group.
             for i in range(self.toy_groups):
-                sample_group = self.means[i] + self.toy_sd * np.random.randn(2*sample_group_sz[i]).reshape(-1, 2, 1, 1)
+                sample_group = self.means[i] + self.toy_sd[i] * np.random.randn(2*sample_group_sz[i]).reshape(-1, 2, 1, 1)
                 toy_sample = np.concatenate((toy_sample, sample_group), axis=0)
         elif self.toy_type == 'rings':
             for i in range(self.toy_groups):

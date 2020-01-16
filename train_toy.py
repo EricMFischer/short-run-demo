@@ -19,7 +19,7 @@ from nets import ToyNet
 from utils import plot_diagnostics, ToyDataset
 
 # directory for experiment results
-EXP_DIR = './out_toy/toy_config_1/'
+EXP_DIR = './out_toy/toy_config_15/'
 # json file with experiment config
 CONFIG_FILE = './config_locker/toy_config.json'
 
@@ -78,7 +78,7 @@ optim = optim_bank[config['optimizer_type']](f.parameters(), lr=config['lr_init'
 
 print('Processing data...')
 # toy dataset for which true samples can be obtained
-q = ToyDataset(config['toy_type'], config['toy_groups'], config['toy_sd'], # TODO: hardcode toy_sd and toy_radius here?
+q = ToyDataset(config['toy_type'], config['toy_groups'], config['toy_sd'],
                config['toy_radius'], config['viz_res'], config['kde_bw'])
 
 # initialize persistent states from noise
