@@ -161,9 +161,9 @@ class ToyDataset:
         self.toy_groups = toy_groups
 
         # hardcode toy_sd, radius, and weights if toy type is 'gmm_2'
-        self.toy_sd = [1.4e-1, 1.6e-1, 1.5e-1] if toy_type == 'gmm_2' else toy_sd
-        self.toy_radius = [1.5, 1.6, 1.1] if toy_type == 'gmm_2' else toy_radius
-        self.weights = [0.1, 0.2, 0.7] if toy_type == 'gmm_2' else np.ones(toy_groups) / toy_groups
+        self.toy_sd = np.random.permutation([1.1e-1, 1.3e-1, 1.5e-1]) if toy_type == 'gmm_2' else toy_sd
+        self.toy_radius = np.random.permutation([1.0, 1.25, 1.5]) if toy_type == 'gmm_2' else toy_radius
+        self.weights = np.random.permutation([0.15, 0.25, 0.60]) if toy_type == 'gmm_2' else np.ones(toy_groups) / toy_groups
 
         if toy_type == 'gmm':
             means_x = np.cos(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, toy_groups)).reshape(toy_groups, 1, 1, 1)
@@ -196,15 +196,16 @@ class ToyDataset:
         elif self.toy_type == 'gmm_2':
             def true_density(x):
                 density = 0
+
                 val = np.sqrt(2)/2
                 rotate_45 = [[val, -val], [val, val]]
                 rotate_135 = [[-val, -val], [val, -val]]
-                A = rotate_45 @ np.diag([.005,.05]) @ np.linalg.inv(rotate_45)
+                A = rotate_45 @ np.diag([.005,.06]) @ np.linalg.inv(rotate_45)
                 B = rotate_135 @ np.diag([.02,.06]) @ np.linalg.inv(rotate_135)
 
                 covariances = [(self.toy_sd[0]**2)*np.eye(2), A, B]
                 for k in range(toy_groups):
-                    # last axis of input to mvn.pdf denotes the actual components of the PDF
+                    # last axis of input to mvn.pdf denotes the actual components for the PDF
                     density += self.weights[k]*self.mvn.pdf(np.array([x[1], x[0]]), mean=self.means[k].squeeze(),
                                                             cov=covariances[k])
                 return density
@@ -226,8 +227,7 @@ class ToyDataset:
         if toy_type == 'rings':
             self.plot_val_max = toy_groups * toy_radius + 4 * toy_sd
         elif toy_type == 'gmm_2':
-            # self.plot_val_max = max(self.toy_radius) + 4 * max(self.toy_sd)
-            self.plot_val_max = 3
+            self.plot_val_max = 2 * max(self.toy_radius)
         else:
             self.plot_val_max = toy_radius + 4 * toy_sd
 
@@ -286,15 +286,16 @@ class ToyDataset:
 
             # transform learned energy into learned density
             z_learned_density_unnormalized = np.exp(- z_learned_energy)
-            bin_area = (self.xy_plot[1] - self.xy_plot[0]) ** 2
+            bin_area = (self.xy_plot[1] - self.xy_plot[0]) ** 2 # e.g. 0.002
             z_learned_density = z_learned_density_unnormalized / (bin_area * np.sum(z_learned_density_unnormalized))
 
         # kernel density estimate of shortrun samples
         if x_s_t is not None:
             num_plots += 1
+            # density_estimate: dataset is (2,10000), covariance (2,2), weights (10000,)
             density_estimate = self.gaussian_kde(x_s_t.squeeze().cpu().numpy().transpose(), bw_method=self.kde_bw)
-            z_kde_density = np.zeros([self.viz_res, self.viz_res])
-            for i in range(len(self.xy_plot)):
+            z_kde_density = np.zeros([self.viz_res, self.viz_res]) # (200,200)
+            for i in range(len(self.xy_plot)): # self.xy_plot (200,)
                 for j in range(len(self.xy_plot)):
                     z_kde_density[i, j] = density_estimate((self.xy_plot[j], self.xy_plot[i]))
 

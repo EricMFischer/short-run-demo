@@ -12,7 +12,7 @@ from nets import ToyNet
 from utils import plot_diagnostics, ToyDataset
 
 # directory for experiment results
-EXP_DIR = './out_toy/toy_config_4/'
+EXP_DIR = './out_toy/toy_config_1/'
 # json file with experiment config
 CONFIG_FILE = './config_locker/toy_config.json'
 
@@ -70,16 +70,12 @@ if config['optimizer_type'] == 'sgd' and config['epsilon'] > 0:
 optim = optim_bank[config['optimizer_type']](f.parameters(), lr=config['lr_init'])
 
 print('Processing data...')
-# q.means: (3,2,1,1)
-# q.xy_plot: (200), max=plot_val_max, min=-plot_val_max
-# q.z_true_density: (200,200)
+# q.means: e.g. (3,2,1,1)
+# q.xy_plot: e.g. (200), max=plot_val_max, min=-plot_val_max
+# q.z_true_density: e.g. (200,200)
 # toy dataset for which true samples can be obtained
 q = ToyDataset(config['toy_type'], config['toy_groups'], config['toy_sd'],
                config['toy_radius'], config['viz_res'], config['kde_bw'])
-
-# initialize persistent states from noise
-# s_t_0 is used when init_type == 'persistent' in sample_s_t()
-s_t_0 = 2 * t.rand([config['s_t_0_size'], 2, 1, 1]).to(device) - 1 # (10000,2,1,1)
 
 
 ################################
@@ -99,6 +95,8 @@ def sample_s_t(batch_size, L=config['num_mcmc_steps'], init_type=config['init_ty
     # get initial mcmc states for langevin updates ("persistent", "data", "uniform", or "gaussian")
     def sample_s_t_0():
         if init_type == 'persistent':
+            # initialize persistent states from noise
+            s_t_0 = 2 * t.rand([config['s_t_0_size'], 2, 1, 1]).to(device) - 1 # e.g. (10000,2,1,1)
             return sample_state_set(s_t_0, batch_size)
         elif init_type == 'data':
             return sample_q(batch_size), None
@@ -110,20 +108,30 @@ def sample_s_t(batch_size, L=config['num_mcmc_steps'], init_type=config['init_ty
             raise RuntimeError('Invalid method for "init_type" (use "persistent", "data", "uniform", or "gaussian")')
 
     # initialize MCMC samples
-    x_s_t_0, s_t_0_inds = sample_s_t_0()
+    x_s_t_0, s_t_0_inds = sample_s_t_0() # e.g. (100,2,1,1), None
+
+    # for debugging
+    _max, _min, _std = t.max(x_s_t_0), t.min(x_s_t_0), t.std(x_s_t_0) # e.g. with noise_init=2, 4.59, -4.17, 1.87
 
     # iterative langevin updates of MCMC samples
-    x_s_t = t.autograd.Variable(x_s_t_0.clone(), requires_grad=True)
-    r_s_t = t.zeros(1).to(device)  # variable r_s_t (Section 3.2) to record average gradient magnitude
+    x_s_t = t.autograd.Variable(x_s_t_0.clone(), requires_grad=True) # e.g. (100,2,1,1)
+    r_s_t = t.zeros(1).to(device)  # variable r_s_t (Section 3.2) to record average normalized gradient magnitude
     for ell in range(L):
-        f_prime = t.autograd.grad(f(x_s_t).sum(), [x_s_t])[0]
-        x_s_t.data += - f_prime + config['epsilon'] * t.randn_like(x_s_t)
-        r_s_t += f_prime.view(f_prime.shape[0], -1).norm(dim=1).mean()
+        f_x_s_t = f(x_s_t) # e.g. (100)
+        f_x_s_t_sum = f_x_s_t.sum() # scalar
+        f_prime = t.autograd.grad(f_x_s_t_sum, [x_s_t])[0] # gradient magnitude w.r.t. negative samples, e.g. (100,2,1,1)
+        x_s_t.data += - f_prime + config['epsilon'] * t.randn_like(x_s_t) # samples += - gradient + noise
+
+        f_prime_norm = f_prime.view(f_prime.shape[0], -1).norm(dim=1) # normalized gradient magnitude, e.g. (100)
+        r_s_t += f_prime_norm.mean() # scalar
 
     if init_type == 'persistent' and update_s_t_0:
         # update persistent state bank
         s_t_0.data[s_t_0_inds] = x_s_t.detach().data.clone()
 
+    # each time we draw negative samples, we return:
+    # 1) the samples, e.g. (100,2,1,1)
+    # 2) the normalized gradient magnitude averaged over 100 negative samples and over L MCMC steps, lending a scalar
     return x_s_t.detach(), r_s_t.squeeze() / L
 
 
@@ -132,20 +140,23 @@ def sample_s_t(batch_size, L=config['num_mcmc_steps'], init_type=config['init_ty
 #######################
 
 # containers for diagnostic records (see Section 3)
-d_s_t_record = t.zeros(config['num_train_iters']).to(device)  # energy difference between positive and negative samples, (200000)
-r_s_t_record = t.zeros(config['num_train_iters']).to(device)  # average state gradient magnitude along Langevin path, (200000)
+# energy difference between positive and negative samples, e.g. (200000)
+d_s_t_record = t.zeros(config['num_train_iters']).to(device)
+# average state gradient magnitude along Langevin path, e.g. (200000)
+r_s_t_record = t.zeros(config['num_train_iters']).to(device)
 
 print('Training has started.')
 for i in range(config['num_train_iters']):
     # obtain positive and negative samples
-    x_q = sample_q() # positive samples: (100,2,1,1)
-    x_s_t, r_s_t = sample_s_t(batch_size=config['batch_size']) # x_s_t: (100,2,1,1), r_s_t: scalar
+    x_q = sample_q() # positive samples, e.g. (100,2,1,1)
+    x_s_t, r_s_t = sample_s_t(batch_size=config['batch_size']) # e.g. (100,2,1,1), scalar
 
     # calculate ML computational loss d_s_t (Section 3) for data and shortrun samples
     d_s_t = f(x_q).mean() - f(x_s_t).mean()
     if config['epsilon'] > 0:
         # scale loss with the langevin implementation
         d_s_t *= 2 / (config['epsilon'] ** 2)
+
     # stochastic gradient ML update for model weights
     optim.zero_grad()
     d_s_t.backward()
