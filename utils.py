@@ -161,8 +161,8 @@ class ToyDataset:
         self.toy_groups = toy_groups
 
         # hardcode toy_sd, radius, and weights if toy type is 'gmm_2'
-        self.toy_sd = [1.8e-1, 1.5e-1, 1.3e-1] if toy_type == 'gmm_2' else toy_sd
-        self.toy_radius = [1.0, 1.3, 1.5] if toy_type == 'gmm_2' else toy_radius
+        self.toy_sd = [1.4e-1, 1.6e-1, 1.5e-1] if toy_type == 'gmm_2' else toy_sd
+        self.toy_radius = [1.5, 1.6, 1.1] if toy_type == 'gmm_2' else toy_radius
         self.weights = [0.1, 0.2, 0.7] if toy_type == 'gmm_2' else np.ones(toy_groups) / toy_groups
 
         if toy_type == 'gmm':
@@ -181,7 +181,7 @@ class ToyDataset:
                 else:
                     mean_xy = self.toy_radius[i] * np.concatenate((mean_x, mean_y), axis=1)
                     accum_means = np.concatenate((accum_means, mean_xy), axis=0)
-            self.means = accum_means
+            self.means = accum_means # (3,2,1,1)
         else:
             self.means = None
 
@@ -196,9 +196,17 @@ class ToyDataset:
         elif self.toy_type == 'gmm_2':
             def true_density(x):
                 density = 0
+                val = np.sqrt(2)/2
+                rotate_45 = [[val, -val], [val, val]]
+                rotate_135 = [[-val, -val], [val, -val]]
+                A = rotate_45 @ np.diag([.005,.05]) @ np.linalg.inv(rotate_45)
+                B = rotate_135 @ np.diag([.02,.06]) @ np.linalg.inv(rotate_135)
+
+                covariances = [(self.toy_sd[0]**2)*np.eye(2), A, B]
                 for k in range(toy_groups):
+                    # last axis of input to mvn.pdf denotes the actual components of the PDF
                     density += self.weights[k]*self.mvn.pdf(np.array([x[1], x[0]]), mean=self.means[k].squeeze(),
-                                                            cov=(self.toy_sd[k]**2)*np.eye(2))
+                                                            cov=covariances[k])
                 return density
         elif self.toy_type == 'rings':
             def true_density(x):
@@ -224,8 +232,8 @@ class ToyDataset:
             self.plot_val_max = toy_radius + 4 * toy_sd
 
         # save values for plotting groundtruth landscape
-        self.xy_plot = np.linspace(-self.plot_val_max, self.plot_val_max, self.viz_res)
-        self.z_true_density = np.zeros(self.viz_res**2).reshape(self.viz_res, self.viz_res)
+        self.xy_plot = np.linspace(-self.plot_val_max, self.plot_val_max, self.viz_res) # (200)
+        self.z_true_density = np.zeros((self.viz_res, self.viz_res)) # (200,200)
         for x_ind in range(len(self.xy_plot)):
             for y_ind in range(len(self.xy_plot)):
                 self.z_true_density[x_ind, y_ind] = self.true_density([self.xy_plot[x_ind], self.xy_plot[y_ind]])

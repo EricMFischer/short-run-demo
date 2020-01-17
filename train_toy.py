@@ -12,7 +12,7 @@ from nets import ToyNet
 from utils import plot_diagnostics, ToyDataset
 
 # directory for experiment results
-EXP_DIR = './out_toy/toy_config_1/'
+EXP_DIR = './out_toy/toy_config_4/'
 # json file with experiment config
 CONFIG_FILE = './config_locker/toy_config.json'
 
@@ -70,13 +70,16 @@ if config['optimizer_type'] == 'sgd' and config['epsilon'] > 0:
 optim = optim_bank[config['optimizer_type']](f.parameters(), lr=config['lr_init'])
 
 print('Processing data...')
+# q.means: (3,2,1,1)
+# q.xy_plot: (200), max=plot_val_max, min=-plot_val_max
+# q.z_true_density: (200,200)
 # toy dataset for which true samples can be obtained
 q = ToyDataset(config['toy_type'], config['toy_groups'], config['toy_sd'],
                config['toy_radius'], config['viz_res'], config['kde_bw'])
 
 # initialize persistent states from noise
 # s_t_0 is used when init_type == 'persistent' in sample_s_t()
-s_t_0 = 2 * t.rand([config['s_t_0_size'], 2, 1, 1]).to(device) - 1
+s_t_0 = 2 * t.rand([config['s_t_0_size'], 2, 1, 1]).to(device) - 1 # (10000,2,1,1)
 
 
 ################################
@@ -129,14 +132,14 @@ def sample_s_t(batch_size, L=config['num_mcmc_steps'], init_type=config['init_ty
 #######################
 
 # containers for diagnostic records (see Section 3)
-d_s_t_record = t.zeros(config['num_train_iters']).to(device)  # energy difference between positive and negative samples
-r_s_t_record = t.zeros(config['num_train_iters']).to(device)  # average state gradient magnitude along Langevin path
+d_s_t_record = t.zeros(config['num_train_iters']).to(device)  # energy difference between positive and negative samples, (200000)
+r_s_t_record = t.zeros(config['num_train_iters']).to(device)  # average state gradient magnitude along Langevin path, (200000)
 
 print('Training has started.')
 for i in range(config['num_train_iters']):
     # obtain positive and negative samples
-    x_q = sample_q()
-    x_s_t, r_s_t = sample_s_t(batch_size=config['batch_size']) # NOTE: you understand everything until here
+    x_q = sample_q() # positive samples: (100,2,1,1)
+    x_s_t, r_s_t = sample_s_t(batch_size=config['batch_size']) # x_s_t: (100,2,1,1), r_s_t: scalar
 
     # calculate ML computational loss d_s_t (Section 3) for data and shortrun samples
     d_s_t = f(x_q).mean() - f(x_s_t).mean()
@@ -168,6 +171,7 @@ for i in range(config['num_train_iters']):
     # visualize density and log-density for groundtruth, learned energy, and short-run distributions
     if (i + 1) % config['log_viz_freq'] == 0:
         print('{:>6}   Visualizing true density, learned density, and short-run KDE.'.format(i+1))
-        x_kde = sample_s_t(batch_size=config['batch_size_kde'], update_s_t_0=False)[0]
+        # draw negative samples for kernel density estimate
+        x_kde = sample_s_t(batch_size=config['batch_size_kde'], update_s_t_0=False)[0] # (10000,2,1,1)
         q.plot_toy_density(True, f, config['epsilon'], x_kde, EXP_DIR+'landscape/'+'toy_viz_{:>06d}.pdf'.format(i+1))
         print('{:>6}   Visualizations saved.'.format(i + 1))
