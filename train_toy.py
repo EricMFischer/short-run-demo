@@ -2,9 +2,6 @@
 # ## TRAIN EBM USING 2D TOY DISTRIBUTION ## #
 #############################################
 
-import sys
-sys.path.append('/Library/Frameworks/Python.framework/Versions/3.7/lib/python3.7/site-packages')
-
 import torch as t
 import json
 import os
@@ -12,7 +9,7 @@ from nets import ToyNet
 from utils import plot_diagnostics, ToyDataset
 
 # directory for experiment results
-EXP_DIR = './out_toy/toy_config_1/'
+EXP_DIR = './out_toy/persistent/'
 # json file with experiment config
 CONFIG_FILE = './config_locker/toy_config.json'
 
@@ -73,7 +70,6 @@ print('Processing data...')
 # q.means: e.g. (3,2,1,1)
 # q.xy_plot: e.g. (200), max=plot_val_max, min=-plot_val_max
 # q.z_true_density: e.g. (200,200)
-# toy dataset for which true samples can be obtained
 q = ToyDataset(config['toy_type'], config['toy_groups'], config['toy_sd'],
                config['toy_radius'], config['viz_res'], config['kde_bw'])
 
@@ -82,21 +78,22 @@ q = ToyDataset(config['toy_type'], config['toy_groups'], config['toy_sd'],
 # ## FUNCTIONS FOR SAMPLING ## #
 ################################
 
+# initialize persistent states from noise
+s_t_0 = 2 * t.rand([config['s_t_0_size'], 2, 1, 1]).to(device) - 1 # e.g. (10000,2,1,1)
+
 # sample batch from given array of states
 def sample_state_set(state_set, batch_size=config['batch_size']):
     rand_inds = t.randperm(state_set.shape[0])[0:batch_size]
     return state_set[rand_inds], rand_inds
 
-# sample positive states from toy 2d distribution q
+# sample positive states from 2D toy distribution q
 def sample_q(batch_size=config['batch_size']): return t.Tensor(q.sample_toy_data(batch_size)).to(device)
 
-# initialize and update states with langevin dynamics to obtain samples from finite-step MCMC distribution s_t
+# initialize and update states with langevin dynamics to obtain negative samples from MCMC distribution s_t
 def sample_s_t(batch_size, L=config['num_mcmc_steps'], init_type=config['init_type'], update_s_t_0=True):
     # get initial mcmc states for langevin updates ("persistent", "data", "uniform", or "gaussian")
     def sample_s_t_0():
         if init_type == 'persistent':
-            # initialize persistent states from noise
-            s_t_0 = 2 * t.rand([config['s_t_0_size'], 2, 1, 1]).to(device) - 1 # e.g. (10000,2,1,1)
             return sample_state_set(s_t_0, batch_size)
         elif init_type == 'data':
             return sample_q(batch_size), None
@@ -119,8 +116,9 @@ def sample_s_t(batch_size, L=config['num_mcmc_steps'], init_type=config['init_ty
     for ell in range(L):
         f_x_s_t = f(x_s_t) # e.g. (100)
         f_x_s_t_sum = f_x_s_t.sum() # scalar
-        f_prime = t.autograd.grad(f_x_s_t_sum, [x_s_t])[0] # gradient magnitude w.r.t. negative samples, e.g. (100,2,1,1)
-        x_s_t.data += - f_prime + config['epsilon'] * t.randn_like(x_s_t) # samples += - gradient + noise
+        f_prime = t.autograd.grad(f_x_s_t_sum, [x_s_t])[0] # gradient magnitude wrt negative samples, e.g. (100,2,1,1)
+        noise = config['epsilon'] * t.randn_like(x_s_t)
+        x_s_t.data += - f_prime + noise # samples += - gradient + noise
 
         f_prime_norm = f_prime.view(f_prime.shape[0], -1).norm(dim=1) # normalized gradient magnitude, e.g. (100)
         r_s_t += f_prime_norm.mean() # scalar

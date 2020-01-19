@@ -161,18 +161,22 @@ class ToyDataset:
         self.toy_groups = toy_groups
 
         # hardcode toy_sd, radius, and weights if toy type is 'gmm_2'
-        self.toy_sd = np.random.permutation([1.1e-1, 1.3e-1, 1.5e-1]) if toy_type == 'gmm_2' else toy_sd
-        self.toy_radius = np.random.permutation([1.0, 1.25, 1.5]) if toy_type == 'gmm_2' else toy_radius
-        self.weights = np.random.permutation([0.15, 0.25, 0.60]) if toy_type == 'gmm_2' else np.ones(toy_groups) / toy_groups
+        self.toy_sd = toy_sd
+        self.toy_radius = toy_radius
+        self.weights = np.ones(toy_groups) / toy_groups
+
+        if toy_type == 'gmm_2':
+            self.toy_sd = [0.15, 0.15, 0.15] # 0.11, 0.15, 0.19
+            self.toy_radius = [1., 1., 1.] # 1.2, 1.1, 0.9
+            self.weights = [1/3, 1/3, 1/3] # 0.15, 0.15, 0.7
 
         if toy_type == 'gmm':
             means_x = np.cos(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, toy_groups)).reshape(toy_groups, 1, 1, 1)
             means_y = np.sin(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, toy_groups)).reshape(toy_groups, 1, 1, 1)
             self.means = toy_radius * np.concatenate((means_x, means_y), axis=1)
-
         elif toy_type == 'gmm_2':
             accum_means = None
-            mean_radius = [2/5, 3/5, 1]
+            mean_radius = [0., 0.375, 0.75] # 2/5, 3/5, 1
             for i in range(self.toy_groups):
                 mean_x = np.cos(2*np.pi*mean_radius[i]).reshape(1, 1, 1, 1)
                 mean_y = np.sin(2*np.pi*mean_radius[i]).reshape(1, 1, 1, 1)
@@ -190,20 +194,20 @@ class ToyDataset:
             def true_density(x):
                 density = 0
                 for k in range(toy_groups):
-                    density += self.weights[k]*self.mvn.pdf(np.array([x[0], x[1]]), mean=self.means[k].squeeze(),
+                    density += self.weights[k]*self.mvn.pdf(np.array([x[1], x[0]]), mean=self.means[k].squeeze(),
                                                             cov=(self.toy_sd**2)*np.eye(2))
                 return density
         elif self.toy_type == 'gmm_2':
             def true_density(x):
                 density = 0
 
-                val = np.sqrt(2)/2
-                rotate_45 = [[val, -val], [val, val]]
-                rotate_135 = [[-val, -val], [val, -val]]
-                A = rotate_45 @ np.diag([.005,.06]) @ np.linalg.inv(rotate_45)
-                B = rotate_135 @ np.diag([.02,.06]) @ np.linalg.inv(rotate_135)
+                # val = np.sqrt(2)/2
+                # rotate_45 = [[val, -val], [val, val]]
+                # rotate_135 = [[-val, -val], [val, -val]]
+                # A = rotate_45 @ np.diag([.005,.05]) @ np.linalg.inv(rotate_45)
+                # B = rotate_135 @ np.diag([.02,.05]) @ np.linalg.inv(rotate_135)
 
-                covariances = [(self.toy_sd[0]**2)*np.eye(2), A, B]
+                covariances = [(sd**2)*np.eye(2) for sd in self.toy_sd]
                 for k in range(toy_groups):
                     # last axis of input to mvn.pdf denotes the actual components for the PDF
                     density += self.weights[k]*self.mvn.pdf(np.array([x[1], x[0]]), mean=self.means[k].squeeze(),
@@ -227,7 +231,7 @@ class ToyDataset:
         if toy_type == 'rings':
             self.plot_val_max = toy_groups * toy_radius + 4 * toy_sd
         elif toy_type == 'gmm_2':
-            self.plot_val_max = 2 * max(self.toy_radius)
+            self.plot_val_max = max(self.toy_radius) + 4 * max(self.toy_sd)
         else:
             self.plot_val_max = toy_radius + 4 * toy_sd
 
@@ -247,8 +251,7 @@ class ToyDataset:
                 sample_group = self.means[i] + self.toy_sd * np.random.randn(2*sample_group_sz[i]).reshape(-1, 2, 1, 1)
                 toy_sample = np.concatenate((toy_sample, sample_group), axis=0)
         elif self.toy_type == 'gmm_2':
-            # With 3 toy groups and weights=[.1, .2, .7], we generate 10, 20, and 70 samples from the first, second, and third means,
-            # respectively, for each toy group
+            # With 3 toy groups and weights=[1/3, 1/3, 1/3], we generate 33 samples from the first, second, and third means, for each toy group
             for i in range(self.toy_groups):
                 sample_group = self.means[i] + self.toy_sd[i] * np.random.randn(2*sample_group_sz[i]).reshape(-1, 2, 1, 1)
                 toy_sample = np.concatenate((toy_sample, sample_group), axis=0)

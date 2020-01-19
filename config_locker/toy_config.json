@@ -1,7 +1,7 @@
 {
   "_comment": "===== EXPERIMENT PARAMETERS =====",
   "_comment": "number of training iterations",
-  "num_train_iters": 200000,
+  "num_train_iters": 150000,
   "_comment": "number of training samples and synthesized samples per model update",
   "batch_size": 100,
   "_comment": "random seed",
@@ -36,7 +36,7 @@
   "_comment": "number of langevin steps for training",
   "num_mcmc_steps": 100,
   "_comment": "init_type should use one of the following: persistent, data, uniform, gaussian",
-  "init_type": "gaussian",
+  "init_type": "persistent",
   "_comment": "number of persistent images for training (used when init_type is set to persistent)",
   "s_t_0_size": 10000,
   "_comment": "factor to multiply noise distribution (used when init_type is uniform or gaussian)",
