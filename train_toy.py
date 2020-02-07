@@ -9,7 +9,7 @@ from nets import ToyNet
 from utils import plot_diagnostics, ToyDataset
 
 # directory for experiment results
-EXP_DIR = './out_toy/persistent/'
+EXP_DIR = './out_toy/persistent_eps_1.5e-2/'
 # json file with experiment config
 CONFIG_FILE = './config_locker/toy_config.json'
 
@@ -28,7 +28,7 @@ if os.path.exists(EXP_DIR):
     raise RuntimeError('Experiment folder "{}" already exists. Please use a different "EXP_DIR".'.format(EXP_DIR))
 else:
     os.makedirs(EXP_DIR)
-    for folder in ['checkpoints', 'landscape', 'plots', 'code']:
+    for folder in ['checkpoints', 'landscape', 'plots', 'code', 'mcmc_chains']:
         os.mkdir(EXP_DIR + folder)
 
 # save copy of code in the experiment folder
@@ -89,8 +89,16 @@ def sample_state_set(state_set, batch_size=config['batch_size']):
 # sample positive states from 2D toy distribution q
 def sample_q(batch_size=config['batch_size']): return t.Tensor(q.sample_toy_data(batch_size)).to(device)
 
+# visualize movement of MCMC chains during a training iteration
+def plot_mcmc_chains(x_s_t, train_iter, ell):
+    if (train_iter+1) % 500 == 0 and (ell+1) % 20 == 0:
+        train_iter_dir = EXP_DIR+'mcmc_chains/'+'train_iter_{:>06d}/'.format(train_iter+1)
+        if not os.path.exists(train_iter_dir):
+            os.mkdir(train_iter_dir)
+        q.plot_toy_density(True, f, config['epsilon'], x_s_t.detach(), EXP_DIR+'mcmc_chains/'+'train_iter_{:>06d}/mcmc_step_{:>06d}.pdf'.format(train_iter+1, ell+1))
+
 # initialize and update states with langevin dynamics to obtain negative samples from MCMC distribution s_t
-def sample_s_t(batch_size, L=config['num_mcmc_steps'], init_type=config['init_type'], update_s_t_0=True):
+def sample_s_t(batch_size, L=config['num_mcmc_steps'], init_type=config['init_type'], update_s_t_0=True, train_iter=0):
     # get initial mcmc states for langevin updates ("persistent", "data", "uniform", or "gaussian")
     def sample_s_t_0():
         if init_type == 'persistent':
@@ -123,6 +131,9 @@ def sample_s_t(batch_size, L=config['num_mcmc_steps'], init_type=config['init_ty
         f_prime_norm = f_prime.view(f_prime.shape[0], -1).norm(dim=1) # normalized gradient magnitude, e.g. (100)
         r_s_t += f_prime_norm.mean() # scalar
 
+        # visualize movement of MCMC chains during a training iteration
+        plot_mcmc_chains(x_s_t, train_iter, ell)
+        
     if init_type == 'persistent' and update_s_t_0:
         # update persistent state bank
         s_t_0.data[s_t_0_inds] = x_s_t.detach().data.clone()
@@ -147,7 +158,7 @@ print('Training has started.')
 for i in range(config['num_train_iters']):
     # obtain positive and negative samples
     x_q = sample_q() # positive samples, e.g. (100,2,1,1)
-    x_s_t, r_s_t = sample_s_t(batch_size=config['batch_size']) # e.g. (100,2,1,1), scalar
+    x_s_t, r_s_t = sample_s_t(batch_size=config['batch_size'], train_iter=i) # e.g. (100,2,1,1), scalar
 
     # calculate ML computational loss d_s_t (Section 3) for data and shortrun samples
     d_s_t = f(x_q).mean() - f(x_s_t).mean()
@@ -181,6 +192,6 @@ for i in range(config['num_train_iters']):
     if (i + 1) % config['log_viz_freq'] == 0:
         print('{:>6}   Visualizing true density, learned density, and short-run KDE.'.format(i+1))
         # draw negative samples for kernel density estimate
-        x_kde = sample_s_t(batch_size=config['batch_size_kde'], update_s_t_0=False)[0] # (10000,2,1,1)
+        x_kde = sample_s_t(batch_size=config['batch_size_kde'], update_s_t_0=False, train_iter=i)[0] # (10000,2,1,1)
         q.plot_toy_density(True, f, config['epsilon'], x_kde, EXP_DIR+'landscape/'+'toy_viz_{:>06d}.pdf'.format(i+1))
         print('{:>6}   Visualizations saved.'.format(i + 1))

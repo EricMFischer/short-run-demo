@@ -166,9 +166,9 @@ class ToyDataset:
         self.weights = np.ones(toy_groups) / toy_groups
 
         if toy_type == 'gmm_2':
-            self.toy_sd = [0.15, 0.15, 0.15] # 0.11, 0.15, 0.19
-            self.toy_radius = [1., 1., 1.] # 1.2, 1.1, 0.9
-            self.weights = [1/3, 1/3, 1/3] # 0.15, 0.15, 0.7
+            self.toy_sd = [0.15, 0.15, 0.15]
+            self.toy_radius = [0.7, 0.9, 1.]
+            self.weights = [0.15, 0.2, 0.65]
 
         if toy_type == 'gmm':
             means_x = np.cos(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, toy_groups)).reshape(toy_groups, 1, 1, 1)
@@ -176,7 +176,7 @@ class ToyDataset:
             self.means = toy_radius * np.concatenate((means_x, means_y), axis=1)
         elif toy_type == 'gmm_2':
             accum_means = None
-            mean_radius = [0., 0.375, 0.75] # 2/5, 3/5, 1
+            mean_radius = [0., 0.375, 0.75]
             for i in range(self.toy_groups):
                 mean_x = np.cos(2*np.pi*mean_radius[i]).reshape(1, 1, 1, 1)
                 mean_y = np.sin(2*np.pi*mean_radius[i]).reshape(1, 1, 1, 1)
@@ -206,6 +206,7 @@ class ToyDataset:
                 # rotate_135 = [[-val, -val], [val, -val]]
                 # A = rotate_45 @ np.diag([.005,.05]) @ np.linalg.inv(rotate_45)
                 # B = rotate_135 @ np.diag([.02,.05]) @ np.linalg.inv(rotate_135)
+                # covariances = [(sd[0]**2)*np.eye(2), A, B]
 
                 covariances = [(sd**2)*np.eye(2) for sd in self.toy_sd]
                 for k in range(toy_groups):
@@ -274,23 +275,23 @@ class ToyDataset:
             num_plots += 1
 
         # density of learned EBM
-        if f is not None:
-            num_plots += 1
-            xy_plot_torch = t.Tensor(self.xy_plot).view(-1, 1, 1, 1).to(next(f.parameters()).device)
-            # y values for learned energy landscape of descriptor network
-            z_learned_energy = np.zeros([self.viz_res, self.viz_res])
-            for i in range(len(self.xy_plot)):
-                y_vals = float(self.xy_plot[i]) * t.ones_like(xy_plot_torch)
-                vals = t.cat((xy_plot_torch, y_vals), 1)
-                z_learned_energy[i] = f(vals).data.cpu().numpy()
-            # rescale y values to correspond to the groundtruth temperature
-            if epsilon > 0:
-                z_learned_energy *= 2 / (epsilon ** 2)
+        # if f is not None:
+        #     num_plots += 1
+        #     xy_plot_torch = t.Tensor(self.xy_plot).view(-1, 1, 1, 1).to(next(f.parameters()).device)
+        #     # y values for learned energy landscape of descriptor network
+        #     z_learned_energy = np.zeros([self.viz_res, self.viz_res])
+        #     for i in range(len(self.xy_plot)):
+        #         y_vals = float(self.xy_plot[i]) * t.ones_like(xy_plot_torch)
+        #         vals = t.cat((xy_plot_torch, y_vals), 1)
+        #         z_learned_energy[i] = f(vals).data.cpu().numpy()
+        #     # rescale y values to correspond to the groundtruth temperature
+        #     if epsilon > 0:
+        #         z_learned_energy *= 2 / (epsilon ** 2)
 
-            # transform learned energy into learned density
-            z_learned_density_unnormalized = np.exp(- z_learned_energy)
-            bin_area = (self.xy_plot[1] - self.xy_plot[0]) ** 2 # e.g. 0.002
-            z_learned_density = z_learned_density_unnormalized / (bin_area * np.sum(z_learned_density_unnormalized))
+        #     # transform learned energy into learned density
+        #     z_learned_density_unnormalized = np.exp(- z_learned_energy)
+        #     bin_area = (self.xy_plot[1] - self.xy_plot[0]) ** 2 # e.g. 0.002
+        #     z_learned_density = z_learned_density_unnormalized / (bin_area * np.sum(z_learned_density_unnormalized))
 
         # kernel density estimate of shortrun samples
         if x_s_t is not None:
@@ -318,16 +319,16 @@ class ToyDataset:
             plt.imshow(np.log(self.z_true_density + 1e-10), cmap='viridis')
             plt.axis('off')
         # learned ebm
-        if f is not None:
-            plot_ind += 1
-            ax = fig.add_subplot(2, num_plots, plot_ind)
-            ax.set_title('EBM density')
-            plt.imshow(z_learned_density, cmap='viridis')
-            plt.axis('off')
-            ax = fig.add_subplot(2, num_plots, plot_ind + num_plots)
-            ax.set_title('EBM log-density')
-            plt.imshow(np.log(z_learned_density + 1e-10), cmap='viridis')
-            plt.axis('off')
+        # if f is not None:
+        #     plot_ind += 1
+        #     ax = fig.add_subplot(2, num_plots, plot_ind)
+        #     ax.set_title('EBM density')
+        #     plt.imshow(z_learned_density, cmap='viridis')
+        #     plt.axis('off')
+        #     ax = fig.add_subplot(2, num_plots, plot_ind + num_plots)
+        #     ax.set_title('EBM log-density')
+        #     plt.imshow(np.log(z_learned_density + 1e-10), cmap='viridis')
+        #     plt.axis('off')
         # shortrun kde
         if x_s_t is not None:
             plot_ind += 1
