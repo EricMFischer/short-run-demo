@@ -120,35 +120,8 @@ def plot_diagnostics(batch, en_diffs, grad_mags, exp_dir, fontsize=10):
 #####################
 
 class ToyDataset:
-    # Background on Zhu Question 6:
-    # If you take a bimodal Gaussian, and make one Gaussian much smaller by reducing its sigma variable, Zhu is afraid short-run MCMC
-    # can match the 2 modes but not the ratio.
-    # With an 80/20 ratio in a bimodal Guassian, if we count the chains which are attracted to each mode, we want the ratio to be 8/2.
-    # We want the probability mass to shift correctly.
-    # With persistent chains there is most likely no issue. But for short-run (noise initialized), it is good to double-check.
-
-    # Note: Mitch eventually got good short-run results with noise initialization, but he couldn't use a uniform distribution;
-    # he had to use a Gaussian. With just a uniform, it started in a box and got weird corners and edges.
-
-    # With noise_init_factor, we can make the range of the uniform initialization larger, so it's less likely the probability mass
-    # will concentrate in edges or a corner.
-    # With noise_init_factor to shrink or enlarge our proposal uniform distribution range, it alleviates this issue.
-
-    # Depending on how we choose 3 means, may need to change in config the initial proposal noise noise_init_factor.
-    # noise_init_factor: how much we mutiply our means by when we draw samples of noise.
-    # Example: with plot_val_max=4, just using Guassian noise does not lend good short-run results.
-    # With an initial noise distribution too close to the center, it's difficult to capture data.
-    # It's easier for widely spread data to shrink and converge than for narrowly spread data to enlarge to converge.
-
     # Tip: Be aware of the minimum std of your Gaussians, which is important for tuning the langevin dynamics of the long-run MCMC.
     # For every covariance matrix, what is the minimum eigenvalue and what is the minimum (used for tuning) over all 3 of those matrices?
-
-    # GMM parameters: choose mean, std, covariance, weights to be diverse (means should be non-symmetric, noticeably different shapes)
-    # 3 Guassian means:
-    # 1) circle
-    # 2) high weight, oblong convariance (skinny and tilted),
-    # 3) low weight, oblong covariance (skinny and tilted in another way)
-
     def __init__(self, toy_type='gmm', toy_groups=8, toy_sd=0.15, toy_radius=1, viz_res=500, kde_bw=0.05):
         # import helper functions
         from scipy.stats import gaussian_kde
@@ -166,9 +139,9 @@ class ToyDataset:
         self.weights = np.ones(toy_groups) / toy_groups
 
         if toy_type == 'gmm_2':
-            self.toy_sd = [0.15, 0.15, 0.15]
-            self.toy_radius = [0.7, 0.9, 1.]
-            self.weights = [0.15, 0.2, 0.65]
+            self.toy_sd = [0.15, 0.35, 0.45]
+            self.toy_radius = [2., 1.2, 1.4]
+            self.weights = [0.15, 0.15, 0.7]
 
         if toy_type == 'gmm':
             means_x = np.cos(2*np.pi*np.linspace(0, (toy_groups-1)/toy_groups, toy_groups)).reshape(toy_groups, 1, 1, 1)
@@ -201,14 +174,14 @@ class ToyDataset:
             def true_density(x):
                 density = 0
 
-                # val = np.sqrt(2)/2
-                # rotate_45 = [[val, -val], [val, val]]
-                # rotate_135 = [[-val, -val], [val, -val]]
-                # A = rotate_45 @ np.diag([.005,.05]) @ np.linalg.inv(rotate_45)
-                # B = rotate_135 @ np.diag([.02,.05]) @ np.linalg.inv(rotate_135)
-                # covariances = [(sd[0]**2)*np.eye(2), A, B]
+                val = np.sqrt(2)/2
+                rotate_45 = [[val, -val], [val, val]]
+                rotate_135 = [[-val, -val], [val, -val]]
+                A = rotate_45 @ np.diag([.01,.08]) @ np.linalg.inv(rotate_45)
+                B = rotate_135 @ np.diag([.03,.07]) @ np.linalg.inv(rotate_135)
+                covariances = [(self.toy_sd[0]**2)*np.eye(2), A, B]
 
-                covariances = [(sd**2)*np.eye(2) for sd in self.toy_sd]
+                # covariances = [(sd**2)*np.eye(2) for sd in self.toy_sd]
                 for k in range(toy_groups):
                     # last axis of input to mvn.pdf denotes the actual components for the PDF
                     density += self.weights[k]*self.mvn.pdf(np.array([x[1], x[0]]), mean=self.means[k].squeeze(),
@@ -232,7 +205,7 @@ class ToyDataset:
         if toy_type == 'rings':
             self.plot_val_max = toy_groups * toy_radius + 4 * toy_sd
         elif toy_type == 'gmm_2':
-            self.plot_val_max = max(self.toy_radius) + 4 * max(self.toy_sd)
+            self.plot_val_max = max(self.toy_radius) + 2 * max(self.toy_sd)
         else:
             self.plot_val_max = toy_radius + 4 * toy_sd
 
@@ -269,7 +242,7 @@ class ToyDataset:
 
         return toy_sample
 
-    def plot_toy_density(self, plot_truth=False, f=None, epsilon=0.0, x_s_t=None, save_path='toy.pdf'):
+    def plot_toy_density(self, plot_truth=False, f=None, epsilon=0.0, x_s_t=None, save_path='toy.pdf', mcmc_chains=False):
         num_plots = 0
         if plot_truth:
             num_plots += 1
@@ -299,9 +272,14 @@ class ToyDataset:
             # density_estimate: dataset is (2,10000), covariance (2,2), weights (10000,)
             density_estimate = self.gaussian_kde(x_s_t.squeeze().cpu().numpy().transpose(), bw_method=self.kde_bw)
             z_kde_density = np.zeros([self.viz_res, self.viz_res]) # (200,200)
-            for i in range(len(self.xy_plot)): # self.xy_plot (200,)
-                for j in range(len(self.xy_plot)):
-                    z_kde_density[i, j] = density_estimate((self.xy_plot[j], self.xy_plot[i]))
+            # if toy_type is gmm_2 and we are plotting mcmc chains, mcmc chains are instantiated as far away as self.plot_val_max+3
+            if self.toy_type == 'gmm_2' and mcmc_chains is True:
+                xy_plot = np.linspace(-self.plot_val_max, self.plot_val_max+4, self.viz_res) # (200)
+            else:
+                xy_plot = self.xy_plot
+            for i in range(len(xy_plot)): # self.xy_plot (200,)
+                for j in range(len(xy_plot)):
+                    z_kde_density[i, j] = density_estimate((xy_plot[j], xy_plot[i]))
 
         # plot results
         plot_ind = 0
@@ -309,14 +287,23 @@ class ToyDataset:
 
         # true density
         if plot_truth:
+            # if toy_type is gmm_2 and we are plotting mcmc chains, make true density plot the same scale as the kde
+            if self.toy_type == 'gmm_2' and mcmc_chains is True:
+                z_true_density = np.zeros((self.viz_res, self.viz_res)) # (200,200)
+                for x_ind in range(len(xy_plot)):
+                    for y_ind in range(len(xy_plot)):
+                        z_true_density[x_ind, y_ind] = self.true_density([xy_plot[x_ind], xy_plot[y_ind]])
+            else:
+                z_true_density = self.z_true_density
+            
             plot_ind += 1
             ax = fig.add_subplot(2, num_plots, plot_ind)
             ax.set_title('True density')
-            plt.imshow(self.z_true_density, cmap='viridis')
+            plt.imshow(z_true_density, cmap='viridis')
             plt.axis('off')
             ax = fig.add_subplot(2, num_plots, plot_ind + num_plots)
             ax.set_title('True log-density')
-            plt.imshow(np.log(self.z_true_density + 1e-10), cmap='viridis')
+            plt.imshow(np.log(z_true_density + 1e-10), cmap='viridis')
             plt.axis('off')
         # learned ebm
         # if f is not None:
@@ -333,11 +320,17 @@ class ToyDataset:
         if x_s_t is not None:
             plot_ind += 1
             ax = fig.add_subplot(2, num_plots, plot_ind)
-            ax.set_title('Short-run KDE')
+            if mcmc_chains is True:
+                ax.set_title('Markov Chains')
+            else:
+                ax.set_title('Short-run KDE')
             plt.imshow(z_kde_density, cmap='viridis')
             plt.axis('off')
             ax = fig.add_subplot(2, num_plots, plot_ind + num_plots)
-            ax.set_title('Short-run log-KDE')
+            if mcmc_chains is True:
+                ax.set_title('Markov Chains (log scale)')
+            else:
+                ax.set_title('Short-run log-KDE')
             plt.imshow(np.log(z_kde_density + 1e-10), cmap='viridis')
             plt.axis('off')
 

@@ -7,9 +7,10 @@ import json
 import os
 from nets import ToyNet
 from utils import plot_diagnostics, ToyDataset
+from pytorch_adam import Adam
 
 # directory for experiment results
-EXP_DIR = './out_toy/persistent_eps_1.5e-2/'
+EXP_DIR = './out_toy/uniform_noise_init=2/'
 # json file with experiment config
 CONFIG_FILE = './config_locker/toy_config.json'
 
@@ -60,6 +61,7 @@ net_bank = {'toy': ToyNet}
 f = net_bank[config['net_type']]().to(device)
 # set up optimizer
 optim_bank = {'adam': t.optim.Adam, 'sgd': t.optim.SGD}
+# optim_bank = {'adam': Adam, 'sgd': t.optim.SGD}
 if config['optimizer_type'] == 'sgd' and config['epsilon'] > 0:
     # scale learning rate according to langevin noise for invariant tuning
     config['lr_init'] *= (config['epsilon'] ** 2) / 2
@@ -90,12 +92,12 @@ def sample_state_set(state_set, batch_size=config['batch_size']):
 def sample_q(batch_size=config['batch_size']): return t.Tensor(q.sample_toy_data(batch_size)).to(device)
 
 # visualize movement of MCMC chains during a training iteration
-def plot_mcmc_chains(x_s_t, train_iter, ell):
-    if (train_iter+1) % 500 == 0 and (ell+1) % 20 == 0:
+def plot_mcmc_chains(x_s_t, train_iter, mcmc_step):
+    if train_iter+1 in [100,500,1000,5000,10000,15000,20000,50000,100000,150000] and (mcmc_step+1) % 10 == 0:
         train_iter_dir = EXP_DIR+'mcmc_chains/'+'train_iter_{:>06d}/'.format(train_iter+1)
         if not os.path.exists(train_iter_dir):
             os.mkdir(train_iter_dir)
-        q.plot_toy_density(True, f, config['epsilon'], x_s_t.detach(), EXP_DIR+'mcmc_chains/'+'train_iter_{:>06d}/mcmc_step_{:>06d}.pdf'.format(train_iter+1, ell+1))
+        q.plot_toy_density(True, f, config['epsilon'], x_s_t.detach(), EXP_DIR+'mcmc_chains/'+'train_iter_{:>06d}/mcmc_step_{:>06d}.pdf'.format(train_iter+1, mcmc_step+1), mcmc_chains=True)
 
 # initialize and update states with langevin dynamics to obtain negative samples from MCMC distribution s_t
 def sample_s_t(batch_size, L=config['num_mcmc_steps'], init_type=config['init_type'], update_s_t_0=True, train_iter=0):
@@ -106,17 +108,22 @@ def sample_s_t(batch_size, L=config['num_mcmc_steps'], init_type=config['init_ty
         elif init_type == 'data':
             return sample_q(batch_size), None
         elif init_type == 'uniform':
-            return config['noise_init_factor'] * (2 * t.rand([batch_size, 2, 1, 1]) - 1).to(device), None
+            if config['toy_type'] == 'gmm_2':
+                result = (config['noise_init_factor'] * 2 * t.rand([batch_size, 2, 1, 1]) + 3).to(device), None
+            else:
+                result = config['noise_init_factor'] * (2 * t.rand([batch_size, 2, 1, 1]) - 1).to(device), None
+            return result
         elif init_type == 'gaussian':
-            return config['noise_init_factor'] * t.randn([batch_size, 2, 1, 1]).to(device), None
+            if config['toy_type'] == 'gmm_2':
+                result = (config['noise_init_factor'] * t.randn([batch_size, 2, 1, 1]) + 3).to(device), None
+            else:
+                result = config['noise_init_factor'] * t.randn([batch_size, 2, 1, 1]).to(device), None
+            return result
         else:
             raise RuntimeError('Invalid method for "init_type" (use "persistent", "data", "uniform", or "gaussian")')
 
     # initialize MCMC samples
     x_s_t_0, s_t_0_inds = sample_s_t_0() # e.g. (100,2,1,1), None
-
-    # for debugging
-    _max, _min, _std = t.max(x_s_t_0), t.min(x_s_t_0), t.std(x_s_t_0) # e.g. with noise_init=2, 4.59, -4.17, 1.87
 
     # iterative langevin updates of MCMC samples
     x_s_t = t.autograd.Variable(x_s_t_0.clone(), requires_grad=True) # e.g. (100,2,1,1)
