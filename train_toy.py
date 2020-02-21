@@ -99,7 +99,7 @@ def sample_q(batch_size=config['batch_size']): return t.Tensor(q.sample_toy_data
 
 # visualize movement of MCMC chains during a training iteration
 def plot_mcmc_chains(x_s_t, train_iter, mcmc_step):
-    if train_iter+1 in [100] and (mcmc_step+1) % 20 == 0:
+    if train_iter+1 in [5000] and (mcmc_step+1) % 20 == 0:
         train_iter_dir = EXP_DIR+'mcmc_chains/'+'train_iter_{:>06d}/'.format(train_iter+1)
         if not os.path.exists(train_iter_dir):
             os.mkdir(train_iter_dir)
