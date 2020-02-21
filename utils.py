@@ -139,8 +139,8 @@ class ToyDataset:
         self.weights = np.ones(toy_groups) / toy_groups
 
         if toy_type == 'gmm_2':
-            self.toy_sd = [0.15, 0.35, 0.45]
-            self.toy_radius = [2., 1.2, 1.4]
+            self.toy_sd = [0.11, 0.11, 0.15]
+            self.toy_radius = [1.0, 1.0, 1.0]
             self.weights = [0.15, 0.15, 0.7]
 
         if toy_type == 'gmm':
@@ -177,8 +177,8 @@ class ToyDataset:
                 val = np.sqrt(2)/2
                 rotate_45 = [[val, -val], [val, val]]
                 rotate_135 = [[-val, -val], [val, -val]]
-                A = rotate_45 @ np.diag([.01,.08]) @ np.linalg.inv(rotate_45)
-                B = rotate_135 @ np.diag([.03,.07]) @ np.linalg.inv(rotate_135)
+                A = rotate_45 @ np.diag([0.01, 0.0225]) @ np.linalg.inv(rotate_45)
+                B = rotate_135 @ np.diag([0.015, 0.0225]) @ np.linalg.inv(rotate_135)
                 covariances = [(self.toy_sd[0]**2)*np.eye(2), A, B]
 
                 # covariances = [(sd**2)*np.eye(2) for sd in self.toy_sd]
@@ -205,7 +205,7 @@ class ToyDataset:
         if toy_type == 'rings':
             self.plot_val_max = toy_groups * toy_radius + 4 * toy_sd
         elif toy_type == 'gmm_2':
-            self.plot_val_max = max(self.toy_radius) + 2 * max(self.toy_sd)
+            self.plot_val_max = max(self.toy_radius) + 4 * max(self.toy_sd)
         else:
             self.plot_val_max = toy_radius + 4 * toy_sd
 
@@ -287,7 +287,7 @@ class ToyDataset:
 
         # true density
         if plot_truth:
-            # if toy_type is gmm_2 and we are plotting mcmc chains, make true density plot the same scale as the kde
+            # if toy_type is gmm_2 and we are plotting mcmc chains, which means xy_plot changed, make true density plot the same scale as the kde for the mcmc chains
             if self.toy_type == 'gmm_2' and mcmc_chains is True:
                 z_true_density = np.zeros((self.viz_res, self.viz_res)) # (200,200)
                 for x_ind in range(len(xy_plot)):

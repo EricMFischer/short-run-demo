@@ -10,7 +10,7 @@ from utils import plot_diagnostics, ToyDataset
 from pytorch_adam import Adam
 
 # directory for experiment results
-EXP_DIR = './out_toy/uniform_noise_init=2/'
+EXP_DIR = './out_toy/uniform_sgd_lr=5e-3_annealed_eps=1.5e-1_wt_decay=0.15/'
 # json file with experiment config
 CONFIG_FILE = './config_locker/toy_config.json'
 
@@ -66,7 +66,10 @@ if config['optimizer_type'] == 'sgd' and config['epsilon'] > 0:
     # scale learning rate according to langevin noise for invariant tuning
     config['lr_init'] *= (config['epsilon'] ** 2) / 2
     config['lr_min'] *= (config['epsilon'] ** 2) / 2
-optim = optim_bank[config['optimizer_type']](f.parameters(), lr=config['lr_init'])
+if config['toy_type'] == 'gmm_2':
+    optim = optim_bank[config['optimizer_type']](f.parameters(), lr=config['lr_init'], weight_decay=0.15)
+else:
+    optim = optim_bank[config['optimizer_type']](f.parameters(), lr=config['lr_init'])
 
 print('Processing data...')
 # q.means: e.g. (3,2,1,1)
@@ -81,7 +84,10 @@ q = ToyDataset(config['toy_type'], config['toy_groups'], config['toy_sd'],
 ################################
 
 # initialize persistent states from noise
-s_t_0 = 2 * t.rand([config['s_t_0_size'], 2, 1, 1]).to(device) - 1 # e.g. (10000,2,1,1)
+if config['toy_type'] == 'gmm_2':
+    s_t_0 = 2 * t.rand([config['s_t_0_size'], 2, 1, 1]).to(device) + 3
+else:
+    s_t_0 = 2 * t.rand([config['s_t_0_size'], 2, 1, 1]).to(device) - 1 # e.g. (10000,2,1,1)
 
 # sample batch from given array of states
 def sample_state_set(state_set, batch_size=config['batch_size']):
@@ -93,7 +99,7 @@ def sample_q(batch_size=config['batch_size']): return t.Tensor(q.sample_toy_data
 
 # visualize movement of MCMC chains during a training iteration
 def plot_mcmc_chains(x_s_t, train_iter, mcmc_step):
-    if train_iter+1 in [100,500,1000,5000,10000,15000,20000,50000,100000,150000] and (mcmc_step+1) % 10 == 0:
+    if train_iter+1 in [100] and (mcmc_step+1) % 20 == 0:
         train_iter_dir = EXP_DIR+'mcmc_chains/'+'train_iter_{:>06d}/'.format(train_iter+1)
         if not os.path.exists(train_iter_dir):
             os.mkdir(train_iter_dir)
@@ -115,7 +121,7 @@ def sample_s_t(batch_size, L=config['num_mcmc_steps'], init_type=config['init_ty
             return result
         elif init_type == 'gaussian':
             if config['toy_type'] == 'gmm_2':
-                result = (config['noise_init_factor'] * t.randn([batch_size, 2, 1, 1]) + 3).to(device), None
+                result = (config['noise_init_factor'] * t.randn([batch_size, 2, 1, 1]) + 5).to(device), None
             else:
                 result = config['noise_init_factor'] * t.randn([batch_size, 2, 1, 1]).to(device), None
             return result
@@ -132,6 +138,7 @@ def sample_s_t(batch_size, L=config['num_mcmc_steps'], init_type=config['init_ty
         f_x_s_t = f(x_s_t) # e.g. (100)
         f_x_s_t_sum = f_x_s_t.sum() # scalar
         f_prime = t.autograd.grad(f_x_s_t_sum, [x_s_t])[0] # gradient magnitude wrt negative samples, e.g. (100,2,1,1)
+        # noise = 0 if config['toy_type'] == 'gmm_2' else config['epsilon'] * t.randn_like(x_s_t)
         noise = config['epsilon'] * t.randn_like(x_s_t)
         x_s_t.data += - f_prime + noise # samples += - gradient + noise
 
@@ -185,6 +192,13 @@ for i in range(config['num_train_iters']):
     # anneal learning rate
     for lr_gp in optim.param_groups:
         lr_gp['lr'] = max(config['lr_min'], lr_gp['lr'] * config['lr_decay'])
+
+    # if toy_type is gmm_2, anneal SGD learning rate by steps, e.g. [0.05, 0.037625, 0.02525, 0.012875, 0.0005]
+    if config['toy_type'] == 'gmm_2' and i+1 in [2500,5000,7500,10000]: # [25000, 50000, 75000, 100000]
+        # lr_step = (config['lr_init'] - (config['lr_init']/100)) / 4
+        lr_step = (config['lr_init'] - (config['lr_init']/1000)) / 4
+        for lr_gp in optim.param_groups:
+            lr_gp['lr'] -= lr_step
 
     # print and save learning info
     if (i + 1) == 1 or (i + 1) % config['log_info_freq'] == 0:
